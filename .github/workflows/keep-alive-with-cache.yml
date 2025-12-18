@@ -1,0 +1,66 @@
+name: ClawCloud Keep Alive with Cache
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # 每6小时运行一次
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+
+      - name: Create cache directory
+        run: |
+          mkdir -p /tmp/browser-cache
+
+      - name: Restore browser cache
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/browser-cache
+          key: browser-data-${{ runner.os }}-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: |
+            browser-data-${{ runner.os }}-${{ github.sha }}
+            browser-data-${{ runner.os }}-
+
+      - name: Run login script with cache
+        env:
+          GH_USERNAME: ${{ secrets.GH_USERNAME }}
+          GH_PASSWORD: ${{ secrets.GH_PASSWORD }}
+          GH_2FA_SECRET: ${{ secrets.GH_2FA_SECRET }}
+          GH_SESSION: ${{ secrets.GH_SESSION }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          BROWSER_USER_DATA_DIR: ${{ vars.BROWSER_USER_DATA_DIR || '/tmp/browser-cache' }}
+          CUSTOM_USER_AGENT: ${{ vars.CUSTOM_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0' }}
+          BROWSER_HEADLESS: ${{ vars.BROWSER_HEADLESS || 'true' }}
+        run: |
+          python scripts/auto_login.py
+
+      - name: Save browser cache
+        uses: actions/cache/save@v5
+        with:
+          path: /tmp/browser-cache
+          key: browser-data-${{ runner.os }}-${{ github.sha }}-${{ github.run_id }}
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: "*.png"
+          if-no-files-found: ignore
